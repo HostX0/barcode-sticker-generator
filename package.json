@@ -5,11 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
-    "bwip-js": "^4.6.0",
+    "bwip-js": "^4.11.4",
     "jszip": "^3.10.1",
     "next": "^15.5.0",
     "qrcode": "^1.5.4",

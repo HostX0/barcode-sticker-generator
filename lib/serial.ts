@@ -9,9 +9,24 @@ export function cleanPrefix(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
 }
 
+const KNOWN_PRODUCT_PREFIXES: Array<[RegExp, string[]]> = [
+  [/^vivid\s+pro\s+shield\s+colou?r\b/i, ["VVPSC", "VVPCL", "VPSCLR"]],
+  [/^vivid\s+pro\s+matte\b/i, ["VVPMT", "VPMAT", "VVPM"]],
+  [/^vivid\s+pro\s+max\b/i, ["VVPMX", "VPMAX", "VVPM"]],
+  [/^vivid\s+dual\s+finish(?:\s+satin)?\b/i, ["VVDFS", "VVD FS".replace(/\s/g, ""), "VVDF"]],
+  [/^vivid\s+windshield\s+armo(?:u)?r\b/i, ["VVWA", "VVWARM", "VWA"]],
+  [/^vivid\s+shadenova(?:\s+nano[-\s]?50)?\b/i, ["VVSN50", "VVSHN", "VVSN"]],
+  [/^vivid\s+coolguard(?:\s+nano[-\s]?75)?\b/i, ["VVCG75", "VVCGD", "VVCG"]],
+  [/^vivid\s+prime\b/i, ["VVPRM", "VPRIME", "VVPRI"]],
+  [/^vivid\s+pro\b/i, ["VVPRO", "VPRO", "VVP"]],
+  [/^nano[-\s]?35\b/i, ["VVN35", "NANO35", "VN35"]],
+  [/^nano[-\s]?15\b/i, ["VVN15", "NANO15", "VN15"]],
+  [/^nano[-\s]?0?5\b/i, ["VVN05", "NANO05", "VN05"]],
+];
+
 const tokenMap: Record<string, string> = {
   vivid: "VV",
-  pro: "P",
+  pro: "PRO",
   prime: "PRM",
   shield: "S",
   color: "C",
@@ -29,8 +44,12 @@ const tokenMap: Record<string, string> = {
 };
 
 export function suggestPrefixes(productName: string) {
-  const tokens = productName
-    .trim()
+  const normalizedName = productName.trim();
+  for (const [pattern, prefixes] of KNOWN_PRODUCT_PREFIXES) {
+    if (pattern.test(normalizedName)) return prefixes.map(cleanPrefix).slice(0, 3);
+  }
+
+  const tokens = normalizedName
     .split(/\s+/)
     .map((token) => token.replace(/[^a-zA-Z0-9-]/g, ""))
     .filter(Boolean);
@@ -41,19 +60,19 @@ export function suggestPrefixes(productName: string) {
     const lower = token.toLowerCase();
     if (tokenMap[lower]) return tokenMap[lower];
     const nano = lower.match(/^nano-?(\d+)$/);
-    if (nano) return nano[1];
+    if (nano) return nano[1].padStart(2, "0");
     return token.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase();
   });
 
   const primary = cleanPrefix(mapped.join(""));
-  const initials = cleanPrefix(tokens.map((t) => t[0]).join(""));
+  const initials = cleanPrefix(tokens.map((token) => token[0]).join(""));
   const compact = cleanPrefix(
     tokens
-      .map((t, i) => (i === 0 && t.toLowerCase() === "vivid" ? "VV" : t.slice(0, i === 0 ? 2 : 1)))
+      .map((token, index) => (index === 0 && token.toLowerCase() === "vivid" ? "VV" : token.slice(0, index === 0 ? 2 : 1)))
       .join("")
   );
 
-  return Array.from(new Set([primary, compact, initials].filter((v) => v.length >= 3))).slice(0, 3);
+  return Array.from(new Set([primary, compact, initials].filter((value) => value.length >= 3))).slice(0, 3);
 }
 
 export function maxSerialForDigits(digits: number) {
