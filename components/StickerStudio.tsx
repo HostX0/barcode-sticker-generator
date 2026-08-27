@@ -17,6 +17,7 @@ import {
 type Box = { x: number; y: number; width: number; height: number };
 type OverlayKey = "qr" | "barcode" | "serial";
 type FitMode = "stretch" | "contain" | "cover";
+type SizeUnit = "px" | "mm" | "cm";
 
 type TemplateImage = {
   url: string;
@@ -74,10 +75,29 @@ function drawImageFit(
     ctx.drawImage(image, 0, 0, width, height);
     return;
   }
-  const scale = mode === "cover" ? Math.max(width / image.width, height / image.height) : Math.min(width / image.width, height / image.height);
+  const scale = mode === "cover"
+    ? Math.max(width / image.width, height / image.height)
+    : Math.min(width / image.width, height / image.height);
   const drawW = image.width * scale;
   const drawH = image.height * scale;
   ctx.drawImage(image, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+}
+
+function mmToUnit(mm: number, unit: SizeUnit, dpi: number) {
+  if (unit === "px") return (mm / 25.4) * dpi;
+  if (unit === "cm") return mm / 10;
+  return mm;
+}
+
+function unitToMm(value: number, unit: SizeUnit, dpi: number) {
+  if (unit === "px") return (value / dpi) * 25.4;
+  if (unit === "cm") return value * 10;
+  return value;
+}
+
+function displaySizeValue(mm: number, unit: SizeUnit, dpi: number) {
+  const value = mmToUnit(mm, unit, dpi);
+  return unit === "px" ? Math.round(value) : Number(value.toFixed(2));
 }
 
 export default function StickerStudio() {
@@ -89,6 +109,9 @@ export default function StickerStudio() {
   const [widthMm, setWidthMm] = useState(190);
   const [heightMm, setHeightMm] = useState(96);
   const [dpi, setDpi] = useState(300);
+  const [sizeUnit, setSizeUnit] = useState<SizeUnit>("px");
+  const [lockAspectRatio, setLockAspectRatio] = useState(true);
+  const [lockedRatio, setLockedRatio] = useState(190 / 96);
   const [fitMode, setFitMode] = useState<FitMode>("stretch");
   const [verificationBaseUrl, setVerificationBaseUrl] = useState("");
   const [enabled, setEnabled] = useState<Record<OverlayKey, boolean>>({ qr: true, barcode: true, serial: true });
@@ -121,14 +144,32 @@ export default function StickerStudio() {
     [widthMm, heightMm, dpi]
   );
 
+  const originalPhysicalSize = useMemo(() => {
+    if (!template) return null;
+    const width = (template.naturalWidth / dpi) * 25.4;
+    const height = (template.naturalHeight / dpi) * 25.4;
+    return {
+      widthMm: width,
+      heightMm: height,
+      widthCm: width / 10,
+      heightCm: height / 10,
+    };
+  }, [template, dpi]);
+
   const aspectWarning = useMemo(() => {
     if (!template || !widthMm || !heightMm) return "";
     const sourceRatio = template.naturalWidth / template.naturalHeight;
     const targetRatio = widthMm / heightMm;
     const difference = Math.abs(sourceRatio - targetRatio) / sourceRatio;
-    if (difference > 0.03 && fitMode === "stretch") return "The physical size ratio differs from the uploaded artwork by more than 3%. Stretch mode will distort the design; use Contain/Cover or upload artwork with the target ratio.";
+    if (difference > 0.01 && fitMode === "stretch") {
+      return "Ratio is different from the original artwork. Stretch mode will intentionally reshape the design. Lock the ratio to preserve it, or keep it unlocked if this distortion is intentional.";
+    }
     return "";
   }, [template, widthMm, heightMm, fitMode]);
+
+  const widthInput = displaySizeValue(widthMm, sizeUnit, dpi);
+  const heightInput = displaySizeValue(heightMm, sizeUnit, dpi);
+  const unitStep = sizeUnit === "px" ? 1 : sizeUnit === "cm" ? 0.01 : 0.1;
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -168,15 +209,52 @@ export default function StickerStudio() {
   }, [error, firstSerial, qrValue]);
 
   function handleFile(file?: File) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return;
+    if (!file || !file.type.startsWith("image/")) return;
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
       if (template) URL.revokeObjectURL(template.url);
+      const ratio = image.naturalWidth / image.naturalHeight;
       setTemplate({ url, name: file.name, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight });
+      setWidthMm((image.naturalWidth / dpi) * 25.4);
+      setHeightMm((image.naturalHeight / dpi) * 25.4);
+      setLockedRatio(ratio);
+      setLockAspectRatio(true);
+      setSizeUnit("px");
+      setFitMode("stretch");
     };
     image.src = url;
+  }
+
+  function resetToOriginal() {
+    if (!template) return;
+    const ratio = template.naturalWidth / template.naturalHeight;
+    setWidthMm((template.naturalWidth / dpi) * 25.4);
+    setHeightMm((template.naturalHeight / dpi) * 25.4);
+    setLockedRatio(ratio);
+    setLockAspectRatio(true);
+    setFitMode("stretch");
+  }
+
+  function toggleRatioLock() {
+    if (!lockAspectRatio) {
+      setLockedRatio(widthMm / heightMm);
+      setLockAspectRatio(true);
+      return;
+    }
+    setLockAspectRatio(false);
+  }
+
+  function updateDimension(axis: "width" | "height", value: number) {
+    if (!Number.isFinite(value) || value <= 0) return;
+    const mm = unitToMm(value, sizeUnit, dpi);
+    if (axis === "width") {
+      setWidthMm(mm);
+      if (lockAspectRatio) setHeightMm(mm / lockedRatio);
+    } else {
+      setHeightMm(mm);
+      if (lockAspectRatio) setWidthMm(mm * lockedRatio);
+    }
   }
 
   function updateBox(key: OverlayKey, next: Box) {
@@ -236,7 +314,9 @@ export default function StickerStudio() {
     const qrData = verificationBaseUrl.trim()
       ? `${verificationBaseUrl.replace(/\/$/, "")}/${serial}`
       : serial;
-    const qr = enabled.qr ? await QRCode.toDataURL(qrData, { margin: 0, width: 900, errorCorrectionLevel: "M" }) : "";
+    const qr = enabled.qr
+      ? await QRCode.toDataURL(qrData, { margin: 0, width: 900, errorCorrectionLevel: "M" })
+      : "";
     let barcode = "";
     if (enabled.barcode) {
       const barcodeCanvas = document.createElement("canvas");
@@ -268,15 +348,32 @@ export default function StickerStudio() {
     if (enabled.qr && codes.qr) {
       const image = await loadImage(codes.qr);
       const box = boxes.qr;
-      ctx.drawImage(image, (box.x / 100) * canvas.width, (box.y / 100) * canvas.height, (box.width / 100) * canvas.width, (box.height / 100) * canvas.height);
+      ctx.drawImage(
+        image,
+        (box.x / 100) * canvas.width,
+        (box.y / 100) * canvas.height,
+        (box.width / 100) * canvas.width,
+        (box.height / 100) * canvas.height
+      );
     }
 
     if (enabled.barcode && codes.barcode) {
       const image = await loadImage(codes.barcode);
       const box = boxes.barcode;
       ctx.fillStyle = "#fff";
-      ctx.fillRect((box.x / 100) * canvas.width, (box.y / 100) * canvas.height, (box.width / 100) * canvas.width, (box.height / 100) * canvas.height);
-      ctx.drawImage(image, (box.x / 100) * canvas.width, (box.y / 100) * canvas.height, (box.width / 100) * canvas.width, (box.height / 100) * canvas.height);
+      ctx.fillRect(
+        (box.x / 100) * canvas.width,
+        (box.y / 100) * canvas.height,
+        (box.width / 100) * canvas.width,
+        (box.height / 100) * canvas.height
+      );
+      ctx.drawImage(
+        image,
+        (box.x / 100) * canvas.width,
+        (box.y / 100) * canvas.height,
+        (box.width / 100) * canvas.width,
+        (box.height / 100) * canvas.height
+      );
     }
 
     if (enabled.serial) {
@@ -337,8 +434,10 @@ export default function StickerStudio() {
       ["End", lastSerial],
       ["Quantity", quantity],
       ["Serial Length", digits],
-      ["Sticker Size", `${widthMm} × ${heightMm} mm`],
+      ["Sticker Size", `${widthMm.toFixed(2)} × ${heightMm.toFixed(2)} mm`],
+      ["Export Pixels", `${outputPixels.width} × ${outputPixels.height} px`],
       ["Export DPI", dpi],
+      ["Ratio Locked", lockAspectRatio ? "Yes" : "No"],
       [],
     ];
     const table = [["No.", "Product", "Prefix", "Serial", "QR Value", "Width (mm)", "Height (mm)"], ...rows.map((row) => [row.no, row.product, row.prefix, row.serial, row.qrValue, row.widthMm, row.heightMm])];
@@ -374,7 +473,30 @@ export default function StickerStudio() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Serials");
       const workbookBytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
       folder.file("serials.xlsx", workbookBytes);
-      folder.file("batch.json", JSON.stringify({ productName, prefix: cleanPrefix(prefix), digits, start, quantity, end, widthMm, heightMm, dpi, fitMode, verificationBaseUrl, enabled, boxes }, null, 2));
+      folder.file("batch.json", JSON.stringify({
+        productName,
+        prefix: cleanPrefix(prefix),
+        digits,
+        start,
+        quantity,
+        end,
+        widthMm,
+        heightMm,
+        outputPixels,
+        dpi,
+        sizeUnit,
+        lockAspectRatio,
+        lockedRatio,
+        fitMode,
+        verificationBaseUrl,
+        enabled,
+        boxes,
+        originalArtwork: template ? {
+          name: template.name,
+          widthPx: template.naturalWidth,
+          heightPx: template.naturalHeight,
+        } : null,
+      }, null, 2));
       setProgress(96);
       const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
       setProgress(100);
@@ -410,29 +532,61 @@ export default function StickerStudio() {
         <aside className="panel controls">
           <section className="section">
             <h3 className="section-title">1. Artwork</h3>
-            <p className="section-note">Upload the final sticker design from the designer. The app only adds the QR, barcode and serial over it.</p>
+            <p className="section-note">The uploaded artwork now starts at its exact original pixel dimensions and aspect ratio. Resize it only when you want to.</p>
             <div className="field">
               <label>Template image</label>
               <input className="file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleFile(event.target.files?.[0])} />
             </div>
-            {template ? <div className="section-note" style={{ marginTop: 8 }}>{template.name} · {template.naturalWidth}×{template.naturalHeight}px</div> : null}
+
+            {template && originalPhysicalSize ? (
+              <div className="artwork-meta">
+                <div className="artwork-meta-title">Original artwork</div>
+                <div className="artwork-meta-main">{template.naturalWidth} × {template.naturalHeight} px</div>
+                <div>{originalPhysicalSize.widthMm.toFixed(2)} × {originalPhysicalSize.heightMm.toFixed(2)} mm at {dpi} DPI</div>
+                <div>{originalPhysicalSize.widthCm.toFixed(2)} × {originalPhysicalSize.heightCm.toFixed(2)} cm at {dpi} DPI</div>
+                <div className="artwork-meta-file">{template.name}</div>
+              </div>
+            ) : null}
+
+            <div className="size-toolbar">
+              <div className="field unit-field">
+                <label>Resize unit</label>
+                <select value={sizeUnit} onChange={(e) => setSizeUnit(e.target.value as SizeUnit)}>
+                  <option value="px">Pixels (px)</option>
+                  <option value="mm">Millimetres (mm)</option>
+                  <option value="cm">Centimetres (cm)</option>
+                </select>
+              </div>
+              <button type="button" className={`ratio-btn ${lockAspectRatio ? "locked" : "unlocked"}`} onClick={toggleRatioLock}>
+                {lockAspectRatio ? "Ratio locked" : "Ratio unlocked"}
+              </button>
+            </div>
+
             <div className="grid-2">
               <div className="field">
-                <label>Width (mm)</label>
-                <input type="number" min="10" step="0.1" value={widthMm} onChange={(e) => setWidthMm(Number(e.target.value))} />
+                <label>Width ({sizeUnit})</label>
+                <input type="number" min={unitStep} step={unitStep} value={widthInput} onChange={(e) => updateDimension("width", Number(e.target.value))} />
               </div>
               <div className="field">
-                <label>Height (mm)</label>
-                <input type="number" min="10" step="0.1" value={heightMm} onChange={(e) => setHeightMm(Number(e.target.value))} />
+                <label>Height ({sizeUnit})</label>
+                <input type="number" min={unitStep} step={unitStep} value={heightInput} onChange={(e) => updateDimension("height", Number(e.target.value))} />
               </div>
             </div>
+
+            {template ? (
+              <div className="resize-status">
+                <span>Current output: {outputPixels.width} × {outputPixels.height} px</span>
+                <button type="button" className="text-btn" onClick={resetToOriginal}>Reset to original size</button>
+              </div>
+            ) : null}
+
             <div className="grid-2" style={{ marginTop: 12 }}>
               <div className="field">
                 <label>Artwork fit</label>
                 <select value={fitMode} onChange={(e) => setFitMode(e.target.value as FitMode)}>
-                  <option value="stretch">Stretch</option>
-                  <option value="contain">Contain</option>
-                  <option value="cover">Cover</option>
+                  <option value="stretch">Stretch to canvas</option>
+                  <option value="contain">Contain without crop</option>
+                  <option value="cover">Cover / crop edges</option>
                 </select>
               </div>
               <div className="field">
@@ -463,7 +617,7 @@ export default function StickerStudio() {
               <div className="field">
                 <label>Serial digits</label>
                 <select value={digits} onChange={(e) => setDigits(Number(e.target.value))}>
-                  {[3,4,5,6,7,8].map((value) => <option key={value} value={value}>{value} digits</option>)}
+                  {[3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} digits</option>)}
                 </select>
               </div>
               <div className="field">
@@ -499,20 +653,26 @@ export default function StickerStudio() {
           <div className="preview-head">
             <div>
               <h2>Live sticker composer</h2>
-              <p>Drag and resize the outlined QR, barcode and serial areas directly on the artwork.</p>
+              <p>The preview follows the current canvas ratio. Upload starts at the artwork's exact original ratio.</p>
             </div>
             <div className="dimensions">
-              {widthMm} × {heightMm} mm<br />
-              {outputPixels.width} × {outputPixels.height}px @ {dpi} DPI
+              {template ? `${template.naturalWidth} × ${template.naturalHeight}px original` : "No artwork loaded"}<br />
+              {outputPixels.width} × {outputPixels.height}px output<br />
+              {widthMm.toFixed(2)} × {heightMm.toFixed(2)} mm @ {dpi} DPI
             </div>
           </div>
 
           <div className="canvas-wrap">
             {!template ? (
-              <div className="empty-stage"><div><strong>Upload a finished sticker artwork</strong>The current roll sticker default is 190 × 96 mm. After upload, place the dynamic code areas here.</div></div>
+              <div className="empty-stage"><div><strong>Upload a finished sticker artwork</strong>The preview will start with the image's exact original pixel ratio and dimensions.</div></div>
             ) : (
               <div ref={stageRef} className="preview-stage" style={stageStyle}>
-                <img className="preview-art" src={template.url} alt="Sticker artwork" />
+                <img
+                  className="preview-art"
+                  src={template.url}
+                  alt="Sticker artwork"
+                  style={{ objectFit: fitMode === "stretch" ? "fill" : fitMode }}
+                />
                 {renderOverlay("qr")}
                 {renderOverlay("barcode")}
                 {renderOverlay("serial")}
@@ -538,7 +698,7 @@ export default function StickerStudio() {
           {exporting ? <><div className="progress"><div style={{ width: `${progress}%` }} /></div><div className="progress-text">Rendering serialised stickers locally in your browser: {progress}%</div></> : null}
         </section>
       </main>
-      <div className="footnote">Serial ranges use inclusive start numbering: start 33 + quantity 100 ends at 132. No files or serials are uploaded to a server in V1.</div>
+      <div className="footnote">Upload starts at the artwork's exact pixel dimensions. Lock the ratio for proportional resizing; unlock it for independent width/height stretching.</div>
     </div>
   );
 }
