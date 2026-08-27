@@ -52,6 +52,19 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--purple);
 .check-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; font-size: 13px; }
 .file-input { padding: 9px; font-size: 12px; }
 
+.artwork-meta { margin: 12px 0; border: 1px solid #dedff0; background: #f8f8fc; border-radius: 12px; padding: 12px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.artwork-meta-title { color: var(--purple-dark); font-weight: 900; text-transform: uppercase; letter-spacing: .05em; font-size: 10px; }
+.artwork-meta-main { margin-top: 3px; color: var(--ink); font-size: 15px; font-weight: 900; }
+.artwork-meta-file { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.size-toolbar { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin: 12px 0; }
+.unit-field { margin: 0 !important; }
+.ratio-btn { min-width: 120px; min-height: 39px; border-radius: 10px; padding: 9px 12px; font-size: 11px; font-weight: 900; }
+.ratio-btn.locked { border: 1px solid var(--purple); background: rgba(81,70,154,.08); color: var(--purple-dark); }
+.ratio-btn.unlocked { border: 1px solid #d8a62a; background: #fff8dc; color: #795300; }
+.resize-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; color: var(--muted); font-size: 11px; }
+.text-btn { border: 0; background: transparent; color: var(--purple); font-size: 11px; font-weight: 800; padding: 3px 0; }
+.text-btn:hover { text-decoration: underline; }
+
 .suggestion-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
 .chip { border: 1px solid #ddddeb; background: #f8f8fc; padding: 6px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; color: var(--purple-dark); }
 .chip:hover { background: #efeff8; }
@@ -105,7 +118,9 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--purple);
   .workspace { padding: 14px; gap: 14px; }
   .topbar { padding: 18px 16px; }
   .badge { display: none; }
-  .grid-2, .overlay-tools { grid-template-columns: 1fr; }
+  .grid-2, .overlay-tools, .size-toolbar { grid-template-columns: 1fr; }
+  .ratio-btn { width: 100%; }
+  .resize-status { align-items: flex-start; flex-direction: column; }
   .preview-head { flex-direction: column; }
   .dimensions { text-align: left; }
   .canvas-wrap { padding: 12px; min-height: 330px; }
