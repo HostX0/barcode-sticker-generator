@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./phase-a-overlays.css";
+import "./phase-b.css";
 
 export const metadata: Metadata = {
   title: "Barcode Sticker Generator",
