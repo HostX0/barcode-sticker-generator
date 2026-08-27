@@ -18,6 +18,7 @@ type Box = { x: number; y: number; width: number; height: number };
 type OverlayKey = "qr" | "barcode" | "serial";
 type FitMode = "stretch" | "contain" | "cover";
 type SizeUnit = "px" | "mm" | "cm";
+type ZoomMode = "fit" | "custom";
 
 type TemplateImage = {
   url: string;
@@ -100,6 +101,10 @@ function displaySizeValue(mm: number, unit: SizeUnit, dpi: number) {
   return unit === "px" ? Math.round(value) : Number(value.toFixed(2));
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 export default function StickerStudio() {
   const [productName, setProductName] = useState("Vivid Pro Shield Color");
   const [prefix, setPrefix] = useState("VVPSC");
@@ -119,11 +124,16 @@ export default function StickerStudio() {
   const [selected, setSelected] = useState<OverlayKey>("barcode");
   const [template, setTemplate] = useState<TemplateImage | null>(null);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 900, height: 620 });
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("fit");
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const [showGrid, setShowGrid] = useState(false);
   const [qrPreview, setQrPreview] = useState("");
   const [barcodePreview, setBarcodePreview] = useState("");
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const stageRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   const suggestions = useMemo(() => suggestPrefixes(productName), [productName]);
   const config = useMemo(() => ({ prefix, digits, start, quantity }), [prefix, digits, start, quantity]);
@@ -171,6 +181,30 @@ export default function StickerStudio() {
   const heightInput = displaySizeValue(heightMm, sizeUnit, dpi);
   const unitStep = sizeUnit === "px" ? 1 : sizeUnit === "cm" ? 0.01 : 0.1;
 
+  const fitScale = useMemo(() => {
+    if (!template || !outputPixels.width || !outputPixels.height) return 1;
+    const horizontal = Math.max(0.05, (viewportSize.width - 44) / outputPixels.width);
+    const vertical = Math.max(0.05, (viewportSize.height - 44) / outputPixels.height);
+    return Math.min(horizontal, vertical, 1);
+  }, [template, outputPixels.width, outputPixels.height, viewportSize]);
+
+  const displayScale = zoomMode === "fit" ? fitScale : zoomPercent / 100;
+  const renderedStage = useMemo(() => ({
+    width: Math.max(1, Math.round(outputPixels.width * displayScale)),
+    height: Math.max(1, Math.round(outputPixels.height * displayScale)),
+  }), [outputPixels, displayScale]);
+  const effectiveZoom = Math.max(1, Math.round(displayScale * 100));
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const update = () => setViewportSize({ width: viewport.clientWidth, height: viewport.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [template]);
+
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -179,7 +213,7 @@ export default function StickerStudio() {
     const observer = new ResizeObserver(update);
     observer.observe(stage);
     return () => observer.disconnect();
-  }, [template, widthMm, heightMm]);
+  }, [template, renderedStage.width, renderedStage.height]);
 
   useEffect(() => {
     if (error) {
@@ -222,6 +256,8 @@ export default function StickerStudio() {
       setLockAspectRatio(true);
       setSizeUnit("px");
       setFitMode("stretch");
+      setZoomMode("fit");
+      setShowGrid(false);
     };
     image.src = url;
   }
@@ -234,6 +270,7 @@ export default function StickerStudio() {
     setLockedRatio(ratio);
     setLockAspectRatio(true);
     setFitMode("stretch");
+    setZoomMode("fit");
   }
 
   function toggleRatioLock() {
@@ -257,8 +294,23 @@ export default function StickerStudio() {
     }
   }
 
+  function setCustomZoom(next: number) {
+    setZoomPercent(clamp(Math.round(next), 10, 400));
+    setZoomMode("custom");
+  }
+
+  function zoomBy(delta: number) {
+    const current = zoomMode === "fit" ? effectiveZoom : zoomPercent;
+    setCustomZoom(current + delta);
+  }
+
   function updateBox(key: OverlayKey, next: Box) {
-    setBoxes((current) => ({ ...current, [key]: next }));
+    setBoxes((current) => ({ ...current, [key]: {
+      x: clamp(next.x, 0, 100 - next.width),
+      y: clamp(next.y, 0, 100 - next.height),
+      width: clamp(next.width, 0.5, 100),
+      height: clamp(next.height, 0.5, 100),
+    } }));
   }
 
   function boxPixels(box: Box) {
@@ -267,6 +319,24 @@ export default function StickerStudio() {
       y: (box.y / 100) * previewSize.height,
       width: (box.width / 100) * previewSize.width,
       height: (box.height / 100) * previewSize.height,
+    };
+  }
+
+  function boxActualPixels(box: Box) {
+    return {
+      x: (box.x / 100) * outputPixels.width,
+      y: (box.y / 100) * outputPixels.height,
+      width: (box.width / 100) * outputPixels.width,
+      height: (box.height / 100) * outputPixels.height,
+    };
+  }
+
+  function boxMm(box: Box) {
+    return {
+      x: (box.x / 100) * widthMm,
+      y: (box.y / 100) * heightMm,
+      width: (box.width / 100) * widthMm,
+      height: (box.height / 100) * heightMm,
     };
   }
 
@@ -280,8 +350,8 @@ export default function StickerStudio() {
         bounds="parent"
         size={{ width: px.width, height: px.height }}
         position={{ x: px.x, y: px.y }}
-        minWidth={32}
-        minHeight={20}
+        minWidth={12}
+        minHeight={12}
         onMouseDown={() => setSelected(key)}
         onDragStart={() => setSelected(key)}
         onResizeStart={() => setSelected(key)}
@@ -509,9 +579,10 @@ export default function StickerStudio() {
     }
   }
 
-  const stageStyle = template
-    ? { aspectRatio: `${widthMm} / ${heightMm}`, width: "min(100%, 980px)", height: "auto" }
-    : undefined;
+  const stageStyle = template ? {
+    width: `${renderedStage.width}px`,
+    height: `${renderedStage.height}px`,
+  } : undefined;
 
   return (
     <div className="shell">
@@ -532,7 +603,7 @@ export default function StickerStudio() {
         <aside className="panel controls">
           <section className="section">
             <h3 className="section-title">1. Artwork</h3>
-            <p className="section-note">The uploaded artwork now starts at its exact original pixel dimensions and aspect ratio. Resize it only when you want to.</p>
+            <p className="section-note">The uploaded artwork starts at its exact original pixel dimensions and aspect ratio. Resize it only when you want to.</p>
             <div className="field">
               <label>Template image</label>
               <input className="file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleFile(event.target.files?.[0])} />
@@ -653,7 +724,7 @@ export default function StickerStudio() {
           <div className="preview-head">
             <div>
               <h2>Live sticker composer</h2>
-              <p>The preview follows the current canvas ratio. Upload starts at the artwork's exact original ratio.</p>
+              <p>The workspace is measured from the real output canvas. Zoom changes only the view, never the exported position.</p>
             </div>
             <div className="dimensions">
               {template ? `${template.naturalWidth} × ${template.naturalHeight}px original` : "No artwork loaded"}<br />
@@ -662,31 +733,68 @@ export default function StickerStudio() {
             </div>
           </div>
 
-          <div className="canvas-wrap">
+          <div className="preview-toolbar">
+            <div className="zoom-controls">
+              <button type="button" className={`tool-btn ${zoomMode === "fit" ? "active" : ""}`} onClick={() => setZoomMode("fit")} disabled={!template}>Fit</button>
+              <button type="button" className="tool-btn" onClick={() => setCustomZoom(100)} disabled={!template}>100%</button>
+              <button type="button" className="tool-btn icon-btn" onClick={() => zoomBy(-25)} disabled={!template}>−</button>
+              <div className="zoom-readout">{effectiveZoom}%</div>
+              <button type="button" className="tool-btn icon-btn" onClick={() => zoomBy(25)} disabled={!template}>+</button>
+              <select
+                className="zoom-select"
+                value={zoomMode === "fit" ? "fit" : String(zoomPercent)}
+                onChange={(e) => e.target.value === "fit" ? setZoomMode("fit") : setCustomZoom(Number(e.target.value))}
+                disabled={!template}
+              >
+                <option value="fit">Fit to workspace</option>
+                {[25, 50, 75, 100, 125, 150, 200, 300, 400].map((value) => <option key={value} value={value}>{value}%</option>)}
+              </select>
+            </div>
+            <div className="view-controls">
+              <button type="button" className={`tool-btn ${showGrid ? "active" : ""}`} onClick={() => setShowGrid((value) => !value)} disabled={!template}>Grid</button>
+              <div className="rendered-size">View {renderedStage.width} × {renderedStage.height}px</div>
+            </div>
+          </div>
+
+          <div ref={viewportRef} className="canvas-viewport">
             {!template ? (
-              <div className="empty-stage"><div><strong>Upload a finished sticker artwork</strong>The preview will start with the image's exact original pixel ratio and dimensions.</div></div>
+              <div className="empty-stage"><div><strong>Upload a finished sticker artwork</strong>The workspace will fit the exact output ratio, then you can zoom in for precise placement.</div></div>
             ) : (
-              <div ref={stageRef} className="preview-stage" style={stageStyle}>
-                <img
-                  className="preview-art"
-                  src={template.url}
-                  alt="Sticker artwork"
-                  style={{ objectFit: fitMode === "stretch" ? "fill" : fitMode }}
-                />
-                {renderOverlay("qr")}
-                {renderOverlay("barcode")}
-                {renderOverlay("serial")}
+              <div className="canvas-surface" style={{ minWidth: `${Math.max(renderedStage.width + 44, viewportSize.width)}px`, minHeight: `${Math.max(renderedStage.height + 44, viewportSize.height)}px` }}>
+                <div ref={stageRef} className={`preview-stage ${showGrid ? "show-grid" : ""}`} style={stageStyle}>
+                  <img
+                    className="preview-art"
+                    src={template.url}
+                    alt="Sticker artwork"
+                    style={{ objectFit: fitMode === "stretch" ? "fill" : fitMode }}
+                  />
+                  {renderOverlay("qr")}
+                  {renderOverlay("barcode")}
+                  {renderOverlay("serial")}
+                </div>
               </div>
             )}
           </div>
 
+          <div className="preview-statusbar">
+            <span>Actual canvas: {outputPixels.width} × {outputPixels.height}px</span>
+            <span>Zoom: {effectiveZoom}%</span>
+            <span>Preview: {renderedStage.width} × {renderedStage.height}px</span>
+          </div>
+
           <div className="overlay-tools">
-            {(["qr", "barcode", "serial"] as OverlayKey[]).map((key) => (
-              <button type="button" key={key} className="overlay-tool" onClick={() => setSelected(key)}>
-                <strong>{key.toUpperCase()}</strong>
-                X {boxes[key].x.toFixed(1)}% · Y {boxes[key].y.toFixed(1)}% · W {boxes[key].width.toFixed(1)}% · H {boxes[key].height.toFixed(1)}%
-              </button>
-            ))}
+            {(["qr", "barcode", "serial"] as OverlayKey[]).map((key) => {
+              const actual = boxActualPixels(boxes[key]);
+              const mm = boxMm(boxes[key]);
+              return (
+                <button type="button" key={key} className={`overlay-tool ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)}>
+                  <strong>{key.toUpperCase()}</strong>
+                  <span>{Math.round(actual.x)}, {Math.round(actual.y)} px · {Math.round(actual.width)} × {Math.round(actual.height)} px</span>
+                  <span>{mm.x.toFixed(1)}, {mm.y.toFixed(1)} mm · {mm.width.toFixed(1)} × {mm.height.toFixed(1)} mm</span>
+                  <small>X {boxes[key].x.toFixed(1)}% · Y {boxes[key].y.toFixed(1)}%</small>
+                </button>
+              );
+            })}
           </div>
 
           <div className="actions">
@@ -698,7 +806,7 @@ export default function StickerStudio() {
           {exporting ? <><div className="progress"><div style={{ width: `${progress}%` }} /></div><div className="progress-text">Rendering serialised stickers locally in your browser: {progress}%</div></> : null}
         </section>
       </main>
-      <div className="footnote">Upload starts at the artwork's exact pixel dimensions. Lock the ratio for proportional resizing; unlock it for independent width/height stretching.</div>
+      <div className="footnote">Preview zoom is visual only. QR, barcode and serial positions are stored against the real output canvas and stay identical in the exported files.</div>
     </div>
   );
 }
