@@ -1,5 +1,5 @@
-import StickerStudio from "@/components/StickerStudio";
+import StickerStudioFinal from "@/components/StickerStudioFinal";
 
 export default function Home() {
-  return <StickerStudio />;
+  return <StickerStudioFinal />;
 }
