@@ -1,0 +1,125 @@
+.artwork-control-group {
+  margin-top: 8px;
+}
+
+.artwork-control-heading {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  margin-bottom: 10px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(81, 70, 154, .08);
+  color: var(--purple-dark);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+.second-template-toggle {
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid #ddddeb;
+  border-radius: 12px;
+  background: #fafafd;
+}
+
+.second-template-toggle .check-row {
+  padding: 0;
+  font-weight: 800;
+}
+
+.second-template-controls {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed #d8dae5;
+}
+
+.template-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #f6f6fa;
+}
+
+.template-tab {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: transparent;
+  color: #686a7d;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.template-tab.active {
+  background: #fff;
+  color: var(--purple-dark);
+  box-shadow: 0 1px 5px rgba(32, 28, 73, .12);
+}
+
+/* The resize rectangle is the exact content rectangle. */
+.overlay {
+  background: transparent;
+}
+
+.overlay img {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
+  pointer-events: none;
+}
+
+.overlay-qr,
+.overlay-barcode,
+.overlay-serial {
+  padding: 0 !important;
+}
+
+.overlay-serial {
+  background: transparent !important;
+  line-height: 1;
+}
+
+.serial-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #111;
+  font-family: Arial, sans-serif;
+  font-weight: 800;
+  line-height: .92;
+  white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
+}
+
+.phase-note {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid #dedff0;
+  border-radius: 10px;
+  background: #f8f8fc;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 620px) {
+  .template-tabs {
+    display: flex;
+    width: 100%;
+  }
+  .template-tab {
+    flex: 1;
+  }
+}
