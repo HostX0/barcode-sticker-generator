@@ -3,6 +3,7 @@ import "./globals.css";
 import "./phase-a-overlays.css";
 import "./phase-b.css";
 import "./ui-polish.css";
+import "./mobile.css";
 
 export const metadata: Metadata = {
   title: "Barcode Sticker Generator",
